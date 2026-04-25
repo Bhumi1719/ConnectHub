@@ -21,6 +21,18 @@
         <jjwt.version>0.12.3</jjwt.version>
     </properties>
 
+	<dependencyManagement>
+	    <dependencies>
+	        <dependency>
+	            <groupId>org.springframework.cloud</groupId>
+	            <artifactId>spring-cloud-dependencies</artifactId>
+	            <version>2023.0.0</version>
+	            <type>pom</type>
+	            <scope>import</scope>
+	        </dependency>
+	    </dependencies>
+	</dependencyManagement>
+	
     <dependencies>
 
         <!-- Spring Boot Web -->
@@ -66,6 +78,12 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+		<!-- Eureka Client -->
+		<dependency>
+		    <groupId>org.springframework.cloud</groupId>
+		    <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+		</dependency>
+		
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
