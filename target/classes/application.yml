@@ -1,0 +1,98 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      routes:
+
+        # ── Auth Service ─────────────────────────────────────────────────────
+        - id: auth-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/auth/**
+          filters:
+            - StripPrefix=0
+
+        # ── Room Service ─────────────────────────────────────────────────────
+        - id: room-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/rooms/**
+          filters:
+            - StripPrefix=0
+
+        # ── Message Service ──────────────────────────────────────────────────
+        - id: message-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/messages/**
+          filters:
+            - StripPrefix=0
+
+        # ── Presence Service ─────────────────────────────────────────────────
+        - id: presence-service
+          uri: http://localhost:8084
+          predicates:
+            - Path=/presence/**
+          filters:
+            - StripPrefix=0
+
+        # ── Notification Service ─────────────────────────────────────────────
+        - id: notification-service
+          uri: http://localhost:8085
+          predicates:
+            - Path=/notifications/**
+          filters:
+            - StripPrefix=0
+
+        # ── Media Service ────────────────────────────────────────────────────
+        - id: media-service
+          uri: http://localhost:8086
+          predicates:
+            - Path=/media/**
+          filters:
+            - StripPrefix=0
+
+        # ── WebSocket Service ────────────────────────────────────────────────
+        - id: websocket-service
+          uri: http://localhost:8087
+          predicates:
+            - Path=/ws/**
+          filters:
+            - StripPrefix=0
+
+      # Global CORS
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+
+# Eureka
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# JWT
+jwt:
+  secret: ConnectHubSuperSecretKeyForJWTTokenGeneration2024MustBe256BitsLong
+
+# Logging
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.connecthub: DEBUG
