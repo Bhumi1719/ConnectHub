@@ -170,6 +170,12 @@ public class MessageServiceImpl implements MessageService {
         return messageRepository.findUnreadMessages(roomId, since);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public long getUnreadCount(Integer roomId, Integer userId, LocalDateTime since) {
+        return messageRepository.countUnreadMessages(roomId, userId, since);
+    }
+
     // ─── Helper — Notify Room Service ─────────────────────────────────────────
 
     private void updateRoomLastMessage(Integer roomId) {

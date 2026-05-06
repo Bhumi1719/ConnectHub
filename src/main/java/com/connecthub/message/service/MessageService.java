@@ -39,4 +39,7 @@ public interface MessageService {
 
     // Get unread messages after lastReadAt
     List<Message> getUnreadMessages(Integer roomId, LocalDateTime since);
+
+    // Get unread message count after lastReadAt, excluding the current user's own messages
+    long getUnreadCount(Integer roomId, Integer userId, LocalDateTime since);
 }

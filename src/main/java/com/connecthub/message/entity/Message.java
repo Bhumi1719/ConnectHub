@@ -1,13 +1,18 @@
 package com.connecthub.message.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Entity
 @Table(name = "messages")
 public class Message {
+    private static final DateTimeFormatter JSON_DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,8 +53,12 @@ public class Message {
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
     private LocalDateTime sentAt;
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonSerialize(using = LocalDateTimeSerializer.class)
     private LocalDateTime editedAt;
 
     // ─── No-arg constructor ───────────────────────────────────────────────────
@@ -66,8 +75,8 @@ public class Message {
     public Boolean getIsEdited() { return isEdited; }
     public Boolean getIsDeleted() { return isDeleted; }
     public String getDeliveryStatus() { return deliveryStatus; }
-    public LocalDateTime getSentAt() { return sentAt; }
-    public LocalDateTime getEditedAt() { return editedAt; }
+    public String getSentAt() { return formatDateTime(sentAt); }
+    public String getEditedAt() { return formatDateTime(editedAt); }
 
     // ─── Setters ──────────────────────────────────────────────────────────────
     public void setMessageId(Integer messageId) { this.messageId = messageId; }
@@ -81,6 +90,10 @@ public class Message {
     public void setIsDeleted(Boolean isDeleted) { this.isDeleted = isDeleted; }
     public void setDeliveryStatus(String deliveryStatus) { this.deliveryStatus = deliveryStatus; }
     public void setEditedAt(LocalDateTime editedAt) { this.editedAt = editedAt; }
+
+    private String formatDateTime(LocalDateTime value) {
+        return value != null ? value.format(JSON_DATE_TIME_FORMATTER) : null;
+    }
 
     // ─── Builder ──────────────────────────────────────────────────────────────
     public static MessageBuilder builder() { return new MessageBuilder(); }
