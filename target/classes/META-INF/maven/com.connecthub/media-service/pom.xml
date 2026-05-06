@@ -79,6 +79,13 @@
             <version>0.4.20</version>
         </dependency>
 
+		<!-- Swagger -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>2.3.0</version>
+		</dependency>
+		
 		<!-- Eureka Client -->
 		<dependency>
 		    <groupId>org.springframework.cloud</groupId>
