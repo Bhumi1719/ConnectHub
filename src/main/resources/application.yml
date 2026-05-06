@@ -9,63 +9,116 @@ spring:
     gateway:
       routes:
 
-        # ── Auth Service ─────────────────────────────────────────────────────
+        # ── Auth Service ──────────────────────────────────────────────────────
         - id: auth-service
-          uri: http://localhost:8081
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
           predicates:
             - Path=/auth/**
           filters:
             - StripPrefix=0
 
-        # ── Room Service ─────────────────────────────────────────────────────
+        - id: auth-service-oauth2
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/oauth2/**,/login/oauth2/**
+          filters:
+            - StripPrefix=0
+
+        # ── Room Service ──────────────────────────────────────────────────────
         - id: room-service
-          uri: http://localhost:8082
+          uri: ${ROOM_SERVICE_URL:http://localhost:8082}
           predicates:
             - Path=/rooms/**
           filters:
             - StripPrefix=0
 
-        # ── Message Service ──────────────────────────────────────────────────
+        # ── Message Service ───────────────────────────────────────────────────
         - id: message-service
-          uri: http://localhost:8083
+          uri: ${MESSAGE_SERVICE_URL:http://localhost:8083}
           predicates:
             - Path=/messages/**
           filters:
             - StripPrefix=0
 
-        # ── Presence Service ─────────────────────────────────────────────────
+        # ── Presence Service ──────────────────────────────────────────────────
         - id: presence-service
-          uri: http://localhost:8084
+          uri: ${PRESENCE_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=/presence/**
           filters:
             - StripPrefix=0
 
-        # ── Notification Service ─────────────────────────────────────────────
+        # ── Notification Service ──────────────────────────────────────────────
         - id: notification-service
-          uri: http://localhost:8085
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
           predicates:
             - Path=/notifications/**
           filters:
             - StripPrefix=0
 
-        # ── Media Service ────────────────────────────────────────────────────
+        # ── Media Service ─────────────────────────────────────────────────────
         - id: media-service
-          uri: http://localhost:8086
+          uri: ${MEDIA_SERVICE_URL:http://localhost:8086}
           predicates:
             - Path=/media/**
           filters:
             - StripPrefix=0
 
-        # ── WebSocket Service ────────────────────────────────────────────────
+        # ── WebSocket Service ─────────────────────────────────────────────────
         - id: websocket-service
-          uri: http://localhost:8087
+          uri: ${WEBSOCKET_SERVICE_URL:http://localhost:8087}
           predicates:
             - Path=/ws/**
           filters:
             - StripPrefix=0
 
-      # Global CORS
+        #  Swagger Aggregation Routes ────────────────────────────────────────
+        # These routes proxy each service's /v3/api-docs endpoint so the Gateway's
+        # Swagger UI can display all services in one place.
+
+        - id: auth-service-swagger
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/swagger/auth-service/**
+          filters:
+            - RewritePath=/swagger/auth-service/(?<segment>.*), /${segment}
+
+        - id: room-service-swagger
+          uri: ${ROOM_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/swagger/room-service/**
+          filters:
+            - RewritePath=/swagger/room-service/(?<segment>.*), /${segment}
+
+        - id: message-service-swagger
+          uri: ${MESSAGE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/swagger/message-service/**
+          filters:
+            - RewritePath=/swagger/message-service/(?<segment>.*), /${segment}
+
+        - id: presence-service-swagger
+          uri: ${PRESENCE_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/swagger/presence-service/**
+          filters:
+            - RewritePath=/swagger/presence-service/(?<segment>.*), /${segment}
+
+        - id: notification-service-swagger
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/swagger/notification-service/**
+          filters:
+            - RewritePath=/swagger/notification-service/(?<segment>.*), /${segment}
+
+        - id: media-service-swagger
+          uri: ${MEDIA_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/swagger/media-service/**
+          filters:
+            - RewritePath=/swagger/media-service/(?<segment>.*), /${segment}
+
+      # Global CORS (keeps frontend and Swagger UI working)
       globalcors:
         corsConfigurations:
           '[/**]':
@@ -75,15 +128,43 @@ spring:
               - POST
               - PUT
               - DELETE
+              - PATCH
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: true
+
+# SpringDoc configuration for API Gateway Swagger aggregation
+# Swagger UI for Gateway: http://localhost:8080/swagger-ui/index.html
+springdoc:
+  swagger-ui:
+    path: /swagger-ui/index.html
+    # Each entry here adds a service dropdown in the Swagger UI.
+    # The `url` is the proxied /v3/api-docs endpoint.
+    urls:
+      - name: "Auth Service"
+        url: /swagger/auth-service/v3/api-docs
+      - name: "Room Service"
+        url: /swagger/room-service/v3/api-docs
+      - name: "Message Service"
+        url: /swagger/message-service/v3/api-docs
+      - name: "Presence Service"
+        url: /swagger/presence-service/v3/api-docs
+      - name: "Notification Service"
+        url: /swagger/notification-service/v3/api-docs
+      - name: "Media Service"
+        url: /swagger/media-service/v3/api-docs
+    operationsSorter: method
+    tagsSorter: alpha
+    try-it-out-enabled: true
+    filter: true
+    # Display full API definition on load
+    urls-primary-name: "Auth Service"
 
 # Eureka
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
 

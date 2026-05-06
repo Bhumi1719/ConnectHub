@@ -69,6 +69,10 @@ public class JwtAuthFilter extends AbstractGatewayFilterFactory<JwtAuthFilter.Co
         return path.startsWith("/auth/register")
                 || path.startsWith("/auth/login")
                 || path.startsWith("/auth/refresh")
+                || path.startsWith("/auth/validate")
+                || path.startsWith("/oauth2/")          // Google OAuth2 authorization
+                || path.startsWith("/login/oauth2/")    // Google OAuth2 callback (Spring default)
+                || path.startsWith("/auth/oauth2/")     // Auth service OAuth2 endpoints
                 || path.startsWith("/ws/");
     }
 
