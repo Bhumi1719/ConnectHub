@@ -6,6 +6,7 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
@@ -43,9 +44,12 @@ public class ChatController {
     @MessageMapping("/chat.send")
     public void sendMessage(@Payload ChatMessage chatMessage) {
         log.info("Message received from userId=" + chatMessage.getSenderId()
-                + " roomId=" + chatMessage.getRoomId());
+                + " roomId=" + chatMessage.getRoomId()
+                + " type=" + chatMessage.getType());
 
         try {
+            validateOutgoingMessage(chatMessage);
+
             // 1. Save message to Message Service
             Map<String, Object> messageRequest = new HashMap<>();
             messageRequest.put("roomId", chatMessage.getRoomId());
@@ -61,6 +65,10 @@ public class ChatController {
                     Map.class
             );
 
+            if (savedMessage == null || savedMessage.get("messageId") == null) {
+                throw new RuntimeException("Message service returned empty/invalid response");
+            }
+
             // 2. Broadcast saved message to all room subscribers
             // Topic: /topic/room/{roomId}
             messagingTemplate.convertAndSend(
@@ -70,8 +78,19 @@ public class ChatController {
 
             log.info("Message broadcast to /topic/room/" + chatMessage.getRoomId());
 
+        } catch (HttpStatusCodeException e) {
+            String responseBody = e.getResponseBodyAsString();
+            log.severe("Failed to save message. status=" + e.getStatusCode()
+                    + " response=" + responseBody);
+            notifySenderMessageFailed(
+                    chatMessage,
+                    "Message service rejected the request ("
+                            + e.getStatusCode().value()
+                            + ")."
+            );
         } catch (Exception e) {
-            log.severe("Failed to process message: " + e.getMessage());
+            log.severe("Failed to process message: " + e);
+            notifySenderMessageFailed(chatMessage, "Unable to save message. Please retry.");
         }
     }
 
@@ -246,5 +265,42 @@ public class ChatController {
         } catch (Exception e) {
             log.warning("Failed to process presence update: " + e.getMessage());
         }
+    }
+
+    private void validateOutgoingMessage(ChatMessage chatMessage) {
+        if (chatMessage.getSenderId() == null || chatMessage.getRoomId() == null) {
+            throw new RuntimeException("senderId and roomId are required");
+        }
+
+        String type = chatMessage.getType() == null ? "TEXT" : chatMessage.getType().trim();
+        chatMessage.setType(type);
+
+        if ("TEXT".equalsIgnoreCase(type)
+                && (chatMessage.getContent() == null || chatMessage.getContent().isBlank())) {
+            throw new RuntimeException("Content is required for TEXT messages");
+        }
+
+        if (("IMAGE".equalsIgnoreCase(type) || "FILE".equalsIgnoreCase(type))
+                && (chatMessage.getMediaUrl() == null || chatMessage.getMediaUrl().isBlank())) {
+            throw new RuntimeException("mediaUrl is required for IMAGE/FILE messages");
+        }
+    }
+
+    private void notifySenderMessageFailed(ChatMessage chatMessage, String reason) {
+        if (chatMessage == null || chatMessage.getSenderId() == null) {
+            return;
+        }
+
+        messagingTemplate.convertAndSend(
+                "/topic/user/" + chatMessage.getSenderId(),
+                Map.of(
+                        "eventType", "MESSAGE_SEND_FAILED",
+                        "roomId", chatMessage.getRoomId(),
+                        "senderId", chatMessage.getSenderId(),
+                        "content", chatMessage.getContent() == null ? "" : chatMessage.getContent(),
+                        "type", chatMessage.getType() == null ? "TEXT" : chatMessage.getType(),
+                        "reason", reason
+                )
+        );
     }
 }
