@@ -2,8 +2,11 @@ package com.connecthub.room.service;
 
 import com.connecthub.room.dto.AddMemberRequest;
 import com.connecthub.room.dto.CreateRoomRequest;
+import com.connecthub.room.dto.RoomDirectoryEntry;
+import com.connecthub.room.dto.RoomJoinRequestView;
 import com.connecthub.room.dto.UpdateRoomRequest;
 import com.connecthub.room.entity.Room;
+import com.connecthub.room.entity.RoomJoinRequest;
 import com.connecthub.room.entity.RoomMember;
 
 import java.util.List;
@@ -19,6 +22,9 @@ public interface RoomService {
     // Get all rooms for a user
     List<Room> getRoomsByUser(Integer userId);
 
+    // Get room directory with join status
+    List<RoomDirectoryEntry> getRoomDirectory(Integer userId);
+
     // Update room settings
     Room updateRoom(Integer roomId, UpdateRoomRequest request);
 
@@ -27,6 +33,14 @@ public interface RoomService {
 
     // Add member to room
     RoomMember addMember(Integer roomId, AddMemberRequest request);
+
+    RoomJoinRequest requestToJoin(Integer roomId, Integer userId);
+
+    List<RoomJoinRequestView> getPendingJoinRequests(Integer roomId);
+
+    RoomMember approveJoinRequest(Integer roomId, Integer userId);
+
+    RoomJoinRequest rejectJoinRequest(Integer roomId, Integer userId);
 
     // Remove member from room
     void removeMember(Integer roomId, Integer userId);

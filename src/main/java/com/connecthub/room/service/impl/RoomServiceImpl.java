@@ -2,17 +2,25 @@ package com.connecthub.room.service.impl;
 
 import com.connecthub.room.dto.AddMemberRequest;
 import com.connecthub.room.dto.CreateRoomRequest;
+import com.connecthub.room.dto.RoomDirectoryEntry;
+import com.connecthub.room.dto.RoomJoinRequestView;
 import com.connecthub.room.dto.UpdateRoomRequest;
 import com.connecthub.room.entity.Room;
+import com.connecthub.room.entity.RoomJoinRequest;
 import com.connecthub.room.entity.RoomMember;
+import com.connecthub.room.repository.RoomJoinRequestRepository;
 import com.connecthub.room.repository.RoomMemberRepository;
 import com.connecthub.room.repository.RoomRepository;
 import com.connecthub.room.service.RoomService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 @Service
@@ -23,11 +31,23 @@ public class RoomServiceImpl implements RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
+    private final RoomJoinRequestRepository roomJoinRequestRepository;
+    private final RestTemplate restTemplate;
+
+    @Value("${message.service.url}")
+    private String messageServiceUrl;
+
+    @Value("${auth.service.url}")
+    private String authServiceUrl;
 
     public RoomServiceImpl(RoomRepository roomRepository,
-                           RoomMemberRepository roomMemberRepository) {
+                           RoomMemberRepository roomMemberRepository,
+                           RoomJoinRequestRepository roomJoinRequestRepository,
+                           RestTemplate restTemplate) {
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
+        this.roomJoinRequestRepository = roomJoinRequestRepository;
+        this.restTemplate = restTemplate;
     }
 
     // ─── Create Room ─────────────────────────────────────────────────────────
@@ -98,6 +118,31 @@ public class RoomServiceImpl implements RoomService {
         return roomRepository.findRoomsByUserId(userId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<RoomDirectoryEntry> getRoomDirectory(Integer userId) {
+        return roomRepository.findAll().stream()
+                .filter(room -> !"DM".equals(room.getType()))
+                .map(room -> {
+                    boolean isJoined = roomMemberRepository.existsByRoomIdAndUserId(room.getRoomId(), userId);
+                    String joinStatus = roomJoinRequestRepository
+                            .findFirstByRoomIdAndUserIdOrderByCreatedAtDesc(room.getRoomId(), userId)
+                            .map(RoomJoinRequest::getStatus)
+                            .orElse(null);
+
+                    return new RoomDirectoryEntry(
+                            room.getRoomId(),
+                            room.getName(),
+                            room.getDescription(),
+                            room.getCreatedById(),
+                            isJoined,
+                            joinStatus,
+                            roomMemberRepository.countByRoomId(room.getRoomId())
+                    );
+                })
+                .toList();
+    }
+
     // ─── Update Room ──────────────────────────────────────────────────────────
 
     @Override
@@ -117,6 +162,8 @@ public class RoomServiceImpl implements RoomService {
     @Override
     public void deleteRoom(Integer roomId) {
         Room room = getRoomById(roomId);
+        roomJoinRequestRepository.deleteByRoomId(roomId);
+        roomMemberRepository.deleteByRoomId(roomId);
         roomRepository.delete(room);
         log.info("Room deleted: " + roomId);
     }
@@ -149,13 +196,101 @@ public class RoomServiceImpl implements RoomService {
         return saved;
     }
 
+    @Override
+    public RoomJoinRequest requestToJoin(Integer roomId, Integer userId) {
+        getRoomById(roomId);
+
+        if (roomMemberRepository.existsByRoomIdAndUserId(roomId, userId)) {
+            throw new RuntimeException("User " + userId + " is already a member of room " + roomId);
+        }
+
+        return roomJoinRequestRepository.findByRoomIdAndUserIdAndStatus(roomId, userId, "PENDING")
+                .orElseGet(() -> {
+                    RoomJoinRequest request = new RoomJoinRequest();
+                    request.setRoomId(roomId);
+                    request.setUserId(userId);
+                    request.setStatus("PENDING");
+                    return roomJoinRequestRepository.save(request);
+                });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RoomJoinRequestView> getPendingJoinRequests(Integer roomId) {
+        getRoomById(roomId);
+        return roomJoinRequestRepository.findByRoomIdAndStatusOrderByCreatedAtAsc(roomId, "PENDING")
+                .stream()
+                .map(this::toJoinRequestView)
+                .toList();
+    }
+
+    @Override
+    public RoomMember approveJoinRequest(Integer roomId, Integer userId) {
+        RoomJoinRequest request = roomJoinRequestRepository
+                .findByRoomIdAndUserIdAndStatus(roomId, userId, "PENDING")
+                .orElseThrow(() -> new RuntimeException("Pending join request not found"));
+
+        AddMemberRequest addMemberRequest = new AddMemberRequest();
+        addMemberRequest.setUserId(userId);
+        addMemberRequest.setRole("MEMBER");
+
+        RoomMember member = addMember(roomId, addMemberRequest);
+        request.setStatus("ACCEPTED");
+        request.setDecidedAt(LocalDateTime.now());
+        roomJoinRequestRepository.save(request);
+        return member;
+    }
+
+    @Override
+    public RoomJoinRequest rejectJoinRequest(Integer roomId, Integer userId) {
+        RoomJoinRequest request = roomJoinRequestRepository
+                .findByRoomIdAndUserIdAndStatus(roomId, userId, "PENDING")
+                .orElseThrow(() -> new RuntimeException("Pending join request not found"));
+
+        request.setStatus("REJECTED");
+        request.setDecidedAt(LocalDateTime.now());
+        return roomJoinRequestRepository.save(request);
+    }
+
+    private RoomJoinRequestView toJoinRequestView(RoomJoinRequest request) {
+        Map<String, Object> profile = null;
+
+        try {
+            profile = restTemplate.getForObject(
+                    authServiceUrl + "/auth/profile/" + request.getUserId(),
+                    Map.class
+            );
+        } catch (Exception e) {
+            log.warning("Could not load join request profile for userId=" + request.getUserId()
+                    + ": " + e.getMessage());
+        }
+
+        return new RoomJoinRequestView(
+                request.getId(),
+                request.getRoomId(),
+                request.getUserId(),
+                request.getStatus(),
+                request.getCreatedAt(),
+                request.getDecidedAt(),
+                profile != null ? String.valueOf(profile.getOrDefault("username", "")) : "",
+                profile != null ? String.valueOf(profile.getOrDefault("fullName", "")) : "",
+                profile != null ? String.valueOf(profile.getOrDefault("avatarUrl", "")) : ""
+        );
+    }
+
     // ─── Remove Member ────────────────────────────────────────────────────────
 
     @Override
     public void removeMember(Integer roomId, Integer userId) {
-        if (!roomMemberRepository.existsByRoomIdAndUserId(roomId, userId)) {
-            throw new RuntimeException("User " + userId + " is not a member of room " + roomId);
+        RoomMember member = roomMemberRepository.findByRoomIdAndUserId(roomId, userId)
+                .orElseThrow(() -> new RuntimeException("User " + userId + " is not a member of room " + roomId));
+
+        if ("ADMIN".equals(member.getRole()) && roomMemberRepository.countByRoomId(roomId) == 1) {
+            deleteRoom(roomId);
+            log.info("Room deleted because last admin left roomId=" + roomId);
+            return;
         }
+
         roomMemberRepository.deleteByRoomIdAndUserId(roomId, userId);
         log.info("Member removed userId=" + userId + " from roomId=" + roomId);
     }
@@ -212,8 +347,28 @@ public class RoomServiceImpl implements RoomService {
     public int getUnreadCount(Integer roomId, Integer userId) {
         RoomMember member = roomMemberRepository.findByRoomIdAndUserId(roomId, userId)
                 .orElse(null);
-        if (member == null || member.getLastReadAt() == null) return 0;
-        return roomMemberRepository.countUnreadMessages(roomId, userId, member.getLastReadAt());
+        if (member == null) return 0;
+
+        LocalDateTime since = member.getLastReadAt() != null
+                ? member.getLastReadAt()
+                : member.getJoinedAt();
+
+        if (since == null) return 0;
+
+        try {
+            String url = UriComponentsBuilder
+                    .fromHttpUrl(messageServiceUrl + "/messages/room/" + roomId + "/unread-count")
+                    .queryParam("userId", userId)
+                    .queryParam("since", since)
+                    .toUriString();
+            Map response = restTemplate.getForObject(url, Map.class);
+            Object unreadCount = response != null ? response.get("unreadCount") : null;
+            return unreadCount instanceof Number ? ((Number) unreadCount).intValue() : 0;
+        } catch (Exception e) {
+            log.warning("Could not fetch unread count for roomId=" + roomId
+                    + " userId=" + userId + ": " + e.getMessage());
+            return 0;
+        }
     }
 
     // ─── Update Last Message At ───────────────────────────────────────────────
