@@ -37,6 +37,18 @@ public class RoomMember {
     @Column(nullable = false)
     private Boolean isMuted = false;
 
+    @Transient
+    private String username;
+
+    @Transient
+    private String email;
+
+    @Transient
+    private String fullName;
+
+    @Transient
+    private String avatarUrl;
+
     // ─── No-arg constructor ───────────────────────────────────────────────────
     public RoomMember() {}
 
@@ -48,6 +60,10 @@ public class RoomMember {
     public LocalDateTime getJoinedAt() { return joinedAt; }
     public LocalDateTime getLastReadAt() { return lastReadAt; }
     public Boolean getIsMuted() { return isMuted; }
+    public String getUsername() { return username; }
+    public String getEmail() { return email; }
+    public String getFullName() { return fullName; }
+    public String getAvatarUrl() { return avatarUrl; }
 
     // ─── Setters ──────────────────────────────────────────────────────────────
     public void setMemberId(Integer memberId) { this.memberId = memberId; }
@@ -56,6 +72,10 @@ public class RoomMember {
     public void setRole(String role) { this.role = role; }
     public void setLastReadAt(LocalDateTime lastReadAt) { this.lastReadAt = lastReadAt; }
     public void setIsMuted(Boolean isMuted) { this.isMuted = isMuted; }
+    public void setUsername(String username) { this.username = username; }
+    public void setEmail(String email) { this.email = email; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 
     // ─── Builder ──────────────────────────────────────────────────────────────
     public static RoomMemberBuilder builder() { return new RoomMemberBuilder(); }

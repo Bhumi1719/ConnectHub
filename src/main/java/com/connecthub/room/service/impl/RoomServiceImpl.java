@@ -54,12 +54,14 @@ public class RoomServiceImpl implements RoomService {
 
     @Override
     public Room createRoom(CreateRoomRequest request) {
+        ensureUserExists(request.getCreatedById());
 
         // If DM — check if already exists
         if ("DM".equals(request.getType())) {
             if (request.getDmTargetUserId() == null) {
                 throw new RuntimeException("dmTargetUserId is required for DM rooms");
             }
+            ensureUserExists(request.getDmTargetUserId());
             roomRepository.findExistingDm(request.getCreatedById(), request.getDmTargetUserId())
                     .ifPresent(existing -> {
                         throw new RuntimeException("DM already exists with roomId: " + existing.getRoomId());
@@ -129,12 +131,15 @@ public class RoomServiceImpl implements RoomService {
                             .findFirstByRoomIdAndUserIdOrderByCreatedAtDesc(room.getRoomId(), userId)
                             .map(RoomJoinRequest::getStatus)
                             .orElse(null);
+                    Map<String, Object> creatorProfile = getProfile(room.getCreatedById());
 
                     return new RoomDirectoryEntry(
                             room.getRoomId(),
                             room.getName(),
                             room.getDescription(),
                             room.getCreatedById(),
+                            profileValue(creatorProfile, "username"),
+                            profileValue(creatorProfile, "fullName"),
                             isJoined,
                             joinStatus,
                             roomMemberRepository.countByRoomId(room.getRoomId())
@@ -144,6 +149,24 @@ public class RoomServiceImpl implements RoomService {
     }
 
     // ─── Update Room ──────────────────────────────────────────────────────────
+
+    private Map<String, Object> getProfile(Integer userId) {
+        if (userId == null) return null;
+        try {
+            return restTemplate.getForObject(
+                    authServiceUrl + "/auth/profile/" + userId,
+                    Map.class
+            );
+        } catch (Exception e) {
+            log.warning("Could not load profile for userId=" + userId + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String profileValue(Map<String, Object> profile, String key) {
+        if (profile == null || profile.get(key) == null) return "";
+        return String.valueOf(profile.get(key));
+    }
 
     @Override
     public Room updateRoom(Integer roomId, UpdateRoomRequest request) {
@@ -160,12 +183,43 @@ public class RoomServiceImpl implements RoomService {
     // ─── Delete Room ──────────────────────────────────────────────────────────
 
     @Override
-    public void deleteRoom(Integer roomId) {
+    public void deleteRoom(Integer roomId, Integer requesterId) {
         Room room = getRoomById(roomId);
-        roomJoinRequestRepository.deleteByRoomId(roomId);
-        roomMemberRepository.deleteByRoomId(roomId);
-        roomRepository.delete(room);
-        log.info("Room deleted: " + roomId);
+        List<RoomMember> members = roomMemberRepository.findByRoomIdOrderByJoinedAtAsc(roomId);
+
+        if (requesterId == null) {
+            roomJoinRequestRepository.deleteByRoomId(roomId);
+            roomMemberRepository.deleteByRoomId(roomId);
+            roomRepository.delete(room);
+            log.info("Room deleted without requester: " + roomId);
+            return;
+        }
+
+        RoomMember requester = members.stream()
+                .filter(member -> requesterId.equals(member.getUserId()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Requester is not a member of room " + roomId));
+
+        if (!"ADMIN".equals(requester.getRole()) && !"OWNER".equals(requester.getRole())) {
+            throw new RuntimeException("Only room admin can delete or transfer room");
+        }
+
+        if (members.size() <= 1) {
+            roomJoinRequestRepository.deleteByRoomId(roomId);
+            roomMemberRepository.deleteByRoomId(roomId);
+            roomRepository.delete(room);
+            log.info("Room deleted because admin was the last member: " + roomId);
+            return;
+        }
+
+        RoomMember nextAdmin = members.stream()
+                .filter(member -> !requesterId.equals(member.getUserId()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No member available for admin transfer"));
+        nextAdmin.setRole("ADMIN");
+        roomMemberRepository.save(nextAdmin);
+        roomMemberRepository.deleteByRoomIdAndUserId(roomId, requesterId);
+        log.info("Admin transferred to userId=" + nextAdmin.getUserId() + " for roomId=" + roomId);
     }
 
     // ─── Add Member ───────────────────────────────────────────────────────────
@@ -173,6 +227,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     public RoomMember addMember(Integer roomId, AddMemberRequest request) {
         Room room = getRoomById(roomId);
+        ensureUserExists(request.getUserId());
 
         // Check if already a member
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, request.getUserId())) {
@@ -191,7 +246,7 @@ public class RoomServiceImpl implements RoomService {
                 .role(request.getRole() != null ? request.getRole() : "MEMBER")
                 .build();
 
-        RoomMember saved = roomMemberRepository.save(member);
+        RoomMember saved = attachMemberProfile(roomMemberRepository.save(member));
         log.info("Member added userId=" + request.getUserId() + " to roomId=" + roomId);
         return saved;
     }
@@ -199,6 +254,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     public RoomJoinRequest requestToJoin(Integer roomId, Integer userId) {
         getRoomById(roomId);
+        ensureUserExists(userId);
 
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, userId)) {
             throw new RuntimeException("User " + userId + " is already a member of room " + roomId);
@@ -286,7 +342,7 @@ public class RoomServiceImpl implements RoomService {
                 .orElseThrow(() -> new RuntimeException("User " + userId + " is not a member of room " + roomId));
 
         if ("ADMIN".equals(member.getRole()) && roomMemberRepository.countByRoomId(roomId) == 1) {
-            deleteRoom(roomId);
+            deleteRoom(roomId, userId);
             log.info("Room deleted because last admin left roomId=" + roomId);
             return;
         }
@@ -300,7 +356,22 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomMember> getMembers(Integer roomId) {
-        return roomMemberRepository.findByRoomId(roomId);
+        return roomMemberRepository.findByRoomIdOrderByJoinedAtAsc(roomId)
+                .stream()
+                .filter(member -> userExists(member.getUserId()))
+                .map(this::attachMemberProfile)
+                .toList();
+    }
+
+    private RoomMember attachMemberProfile(RoomMember member) {
+        Map<String, Object> profile = getProfile(member.getUserId());
+        if (profile != null) {
+            member.setUsername(profileValue(profile, "username"));
+            member.setEmail(profileValue(profile, "email"));
+            member.setFullName(profileValue(profile, "fullName"));
+            member.setAvatarUrl(profileValue(profile, "avatarUrl"));
+        }
+        return member;
     }
 
     // ─── Update Member Role ───────────────────────────────────────────────────
@@ -379,5 +450,24 @@ public class RoomServiceImpl implements RoomService {
         Room room = getRoomById(roomId);
         room.setLastMessageAt(LocalDateTime.now());
         roomRepository.save(room);
+    }
+
+    private void ensureUserExists(Integer userId) {
+        if (!userExists(userId)) {
+            throw new RuntimeException("User not found with id: " + userId);
+        }
+    }
+
+    private boolean userExists(Integer userId) {
+        if (userId == null) {
+            return false;
+        }
+        try {
+            Map profile = restTemplate.getForObject(authServiceUrl + "/auth/profile/" + userId, Map.class);
+            return profile != null && profile.get("userId") != null;
+        } catch (Exception e) {
+            log.warning("Could not validate userId=" + userId + ": " + e.getMessage());
+            return false;
+        }
     }
 }

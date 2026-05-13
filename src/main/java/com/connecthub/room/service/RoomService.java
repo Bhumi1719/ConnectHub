@@ -29,7 +29,7 @@ public interface RoomService {
     Room updateRoom(Integer roomId, UpdateRoomRequest request);
 
     // Delete room
-    void deleteRoom(Integer roomId);
+    void deleteRoom(Integer roomId, Integer requesterId);
 
     // Add member to room
     RoomMember addMember(Integer roomId, AddMemberRequest request);

@@ -151,9 +151,11 @@ public class RoomResource {
     @DeleteMapping("/{roomId}")
     public ResponseEntity<Map<String, String>> deleteRoom(
             @Parameter(description = "Room ID", example = "1")
-            @PathVariable Integer roomId) {
-        roomService.deleteRoom(roomId);
-        return ResponseEntity.ok(Map.of("message", "Room deleted successfully"));
+            @PathVariable Integer roomId,
+            @Parameter(description = "Current admin user ID", example = "1")
+            @RequestParam(required = false) Integer requesterId) {
+        roomService.deleteRoom(roomId, requesterId);
+        return ResponseEntity.ok(Map.of("message", "Room delete request processed successfully"));
     }
 
     // ─── POST /rooms/{roomId}/members ─────────────────────────────────────────
