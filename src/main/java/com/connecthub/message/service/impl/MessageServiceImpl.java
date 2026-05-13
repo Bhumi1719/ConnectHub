@@ -1,11 +1,15 @@
 package com.connecthub.message.service.impl;
 
+import com.connecthub.message.config.RabbitMQConfig;
 import com.connecthub.message.dto.EditMessageRequest;
 import com.connecthub.message.dto.SendMessageRequest;
 import com.connecthub.message.entity.Message;
+import com.connecthub.message.messaging.MessageEventPublisher;
 import com.connecthub.message.repository.MessageRepository;
 import com.connecthub.message.service.MessageService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -25,28 +29,36 @@ public class MessageServiceImpl implements MessageService {
 
     private final MessageRepository messageRepository;
     private final RestTemplate restTemplate;
+    private final MessageEventPublisher eventPublisher;   // ✅ RabbitMQ publisher
 
     @Value("${room.service.url}")
     private String roomServiceUrl;
 
     public MessageServiceImpl(MessageRepository messageRepository,
-                              RestTemplate restTemplate) {
+                              RestTemplate restTemplate,
+                              MessageEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
         this.restTemplate = restTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     // ─── Send Message ─────────────────────────────────────────────────────────
 
     @Override
+    @CacheEvict(value = "messages", key = "#request.roomId")   // ✅ evict room cache on new message
     public Message sendMessage(SendMessageRequest request) {
+        String type = request.getType() == null || request.getType().isBlank()
+                ? "TEXT"
+                : request.getType().trim().toUpperCase();
+
         // Validate content for TEXT messages
-        if ("TEXT".equals(request.getType()) &&
+        if ("TEXT".equals(type) &&
             (request.getContent() == null || request.getContent().isBlank())) {
             throw new RuntimeException("Content is required for TEXT messages");
         }
 
         // Validate mediaUrl for IMAGE/FILE messages
-        if (("IMAGE".equals(request.getType()) || "FILE".equals(request.getType())) &&
+        if (("IMAGE".equals(type) || "FILE".equals(type)) &&
             (request.getMediaUrl() == null || request.getMediaUrl().isBlank())) {
             throw new RuntimeException("mediaUrl is required for IMAGE/FILE messages");
         }
@@ -55,7 +67,7 @@ public class MessageServiceImpl implements MessageService {
                 .roomId(request.getRoomId())
                 .senderId(request.getSenderId())
                 .content(request.getContent())
-                .type(request.getType() != null ? request.getType() : "TEXT")
+                .type(type)
                 .mediaUrl(request.getMediaUrl())
                 .replyToMessageId(request.getReplyToMessageId())
                 .deliveryStatus("SENT")
@@ -64,8 +76,11 @@ public class MessageServiceImpl implements MessageService {
         Message saved = messageRepository.save(message);
         log.info("Message saved: id=" + saved.getMessageId() + " roomId=" + saved.getRoomId());
 
-        // Notify Room Service to update lastMessageAt
+        // Notify Room Service to update lastMessageAt (still via REST — synchronous, lightweight)
         updateRoomLastMessage(request.getRoomId());
+
+        // ✅ Publish to RabbitMQ — notification-service and websocket-service will react
+        eventPublisher.publishMessageSent(saved);
 
         return saved;
     }
@@ -74,6 +89,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "message", key = "#messageId")           // ✅ cache individual message by id
     public Message getMessageById(Integer messageId) {
         return messageRepository.findByMessageId(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found with id: " + messageId));
@@ -83,6 +99,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "messages", key = "#roomId + ':' + #page + ':' + #size") // ✅ cache paginated room messages
     public Page<Message> getMessagesByRoom(Integer roomId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return messageRepository.findByRoomIdOrderBySentAtDesc(roomId, pageable);
@@ -99,6 +116,7 @@ public class MessageServiceImpl implements MessageService {
     // ─── Edit Message ─────────────────────────────────────────────────────────
 
     @Override
+    @CacheEvict(value = {"message", "messages"}, allEntries = true) // ✅ evict on edit
     public Message editMessage(Integer messageId, EditMessageRequest request) {
         Message message = getMessageById(messageId);
 
@@ -115,18 +133,28 @@ public class MessageServiceImpl implements MessageService {
 
         Message updated = messageRepository.save(message);
         log.info("Message edited: id=" + messageId);
+
+        // ✅ Publish edit event — websocket-service will broadcast to room subscribers
+        eventPublisher.publishMessageEdited(updated);
+
         return updated;
     }
 
     // ─── Delete Message (Soft Delete) ─────────────────────────────────────────
 
     @Override
+    @CacheEvict(value = {"message", "messages"}, allEntries = true) // ✅ evict on delete
     public void deleteMessage(Integer messageId) {
         Message message = getMessageById(messageId);
+        Integer roomId = message.getRoomId();
+
         message.setIsDeleted(true);
         message.setContent("[This message was deleted]");
         messageRepository.save(message);
         log.info("Message soft-deleted: id=" + messageId);
+
+        // ✅ Publish delete event — websocket-service will broadcast to room subscribers
+        eventPublisher.publishMessageDeleted(messageId, roomId);
     }
 
     // ─── Search Messages ──────────────────────────────────────────────────────
@@ -152,6 +180,10 @@ public class MessageServiceImpl implements MessageService {
         message.setDeliveryStatus(status);
         messageRepository.save(message);
         log.info("Delivery status updated to " + status + " for messageId=" + messageId);
+
+        // ✅ Publish status update — websocket-service will broadcast read receipts
+        eventPublisher.publishDeliveryStatusUpdated(
+                messageId, message.getRoomId(), message.getSenderId(), status);
     }
 
     // ─── Get Message Count ────────────────────────────────────────────────────

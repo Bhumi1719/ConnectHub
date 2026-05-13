@@ -28,6 +28,8 @@ public class SendMessageRequest {
     public void setContent(String content) { this.content = content; }
     public String getType() { return type; }
     public void setType(String type) { this.type = type; }
+    public String getMessageType() { return type; }
+    public void setMessageType(String messageType) { this.type = messageType; }
     public String getMediaUrl() { return mediaUrl; }
     public void setMediaUrl(String mediaUrl) { this.mediaUrl = mediaUrl; }
     public Integer getReplyToMessageId() { return replyToMessageId; }
