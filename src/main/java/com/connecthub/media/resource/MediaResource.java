@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -36,6 +38,9 @@ import java.util.Optional;
 public class MediaResource {
 
     private final MediaService mediaService;
+
+    @Value("${media.local.upload-dir:${user.home}/connecthub-uploads}")
+    private String uploadDir;
 
     public MediaResource(MediaService mediaService) {
         this.mediaService = mediaService;
@@ -213,14 +218,22 @@ public class MediaResource {
             @Parameter(description = "Filename (from MediaFile.fileUrl)", example = "abc123_report.pdf")
             @PathVariable String filename) {
         try {
-            Path filePath = Paths.get("uploads").resolve(filename).normalize();
+            Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Path filePath = uploadPath.resolve(filename).normalize();
+            if (!filePath.startsWith(uploadPath)) {
+                return ResponseEntity.badRequest().build();
+            }
+
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
+                String contentType = Files.probeContentType(filePath);
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION,
-                                "attachment; filename=\"" + resource.getFilename() + "\"")
-                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                                "inline; filename=\"" + resource.getFilename() + "\"")
+                        .contentType(contentType != null
+                                ? MediaType.parseMediaType(contentType)
+                                : MediaType.APPLICATION_OCTET_STREAM)
                         .body(resource);
             } else {
                 return ResponseEntity.notFound().build();
