@@ -6,6 +6,8 @@ import com.connecthub.presence.entity.UserPresence;
 import com.connecthub.presence.repository.PresenceRepository;
 import com.connecthub.presence.service.PresenceService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,7 @@ public class PresenceServiceImpl implements PresenceService {
     // Called by WebSocket Handler on connection established
 
     @Override
+    @CacheEvict(value = "presence", key = "#request.userId")   // ✅ evict stale presence on connect
     public void setOnline(SetOnlineRequest request) {
         LocalDateTime now = LocalDateTime.now();
 
@@ -71,6 +74,7 @@ public class PresenceServiceImpl implements PresenceService {
     // Called by WebSocket Handler on connection closed
 
     @Override
+    @CacheEvict(value = "presence", key = "#userId")           // ✅ evict presence cache on disconnect
     public void setOffline(Integer userId) {
         presenceRepository.findByUserId(userId).ifPresent(presence -> {
             presence.setStatus("INVISIBLE");
@@ -83,6 +87,7 @@ public class PresenceServiceImpl implements PresenceService {
     // ─── Update Status ────────────────────────────────────────────────────────
 
     @Override
+    @CacheEvict(value = "presence", key = "#userId")           // ✅ evict stale status on update
     public void updateStatus(Integer userId, UpdateStatusRequest request) {
         List<String> allowed = List.of("ONLINE", "AWAY", "DND", "INVISIBLE");
         if (!allowed.contains(request.getStatus())) {
@@ -104,6 +109,7 @@ public class PresenceServiceImpl implements PresenceService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "presence", key = "#userId")            // ✅ cache presence status per user
     public Optional<UserPresence> getPresence(Integer userId) {
         return presenceRepository.findByUserId(userId);
     }
@@ -172,6 +178,7 @@ public class PresenceServiceImpl implements PresenceService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "presence", key = "'online:' + #userId") // ✅ cache boolean online check
     public boolean isOnline(Integer userId) {
         return presenceRepository.findByUserId(userId)
                 .map(p -> "ONLINE".equals(p.getStatus()))
