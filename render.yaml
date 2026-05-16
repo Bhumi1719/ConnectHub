@@ -1,0 +1,50 @@
+services:
+
+  # ── Eureka Service Discovery ─────────────────────────────────────────────────
+  - type: web
+    name: connecthub-eureka
+    runtime: docker
+    dockerfilePath: ./eureka-server/Dockerfile
+    dockerContext: ./eureka-server
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PORT
+        value: 8761
+
+  # ── API Gateway ──────────────────────────────────────────────────────────────
+  - type: web
+    name: connecthub-gateway
+    runtime: docker
+    dockerfilePath: ./api-gateway/Dockerfile
+    dockerContext: ./api-gateway
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: EUREKA_URL
+        fromService:
+          type: web
+          name: connecthub-eureka
+          property: hostport
+          transform: http://{value}/eureka/
+      # Set EUREKA_ENABLED=false if you want gateway to skip Eureka registration
+      - key: EUREKA_ENABLED
+        value: "true"
+      # Service URLs — set these to your actual running service URLs
+      # (local services running in Eclipse, or other deployed instances)
+      - key: AUTH_SERVICE_URL
+        value: http://localhost:8081
+      - key: ROOM_SERVICE_URL
+        value: http://localhost:8082
+      - key: MESSAGE_SERVICE_URL
+        value: http://localhost:8083
+      - key: PRESENCE_SERVICE_URL
+        value: http://localhost:8084
+      - key: NOTIFICATION_SERVICE_URL
+        value: http://localhost:8085
+      - key: MEDIA_SERVICE_URL
+        value: http://localhost:8086
+      - key: WEBSOCKET_SERVICE_URL
+        value: http://localhost:8087
