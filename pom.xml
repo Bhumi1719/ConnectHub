@@ -209,6 +209,15 @@
     
     <dependencyManagement>
 
+    <artifactId>websocket-service</artifactId>
+    <version>1.0.0</version>
+    <description>ConnectHub WebSocket Handler - STOMP Real-time Messaging</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <jjwt.version>0.12.3</jjwt.version>
+    </properties>
+
 	<dependencyManagement>
 	    <dependencies>
 	        <dependency>
@@ -240,6 +249,10 @@
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
+        <!-- Spring WebSocket + STOMP -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
         <!-- Spring Security -->
@@ -296,6 +309,32 @@
 		</dependency>
 		
 		<!--  ✅ RabbitMQ / AMQP  -->
+        <!-- JWT — validate token on WebSocket connect -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Jackson JSON -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        
+        <!--  ✅ RabbitMQ / AMQP  -->
 		<dependency>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-amqp</artifactId>
@@ -307,6 +346,7 @@
         <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 		
+
 		<!-- Eureka Client -->
 		<dependency>
 		    <groupId>org.springframework.cloud</groupId>
