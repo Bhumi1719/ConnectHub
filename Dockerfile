@@ -22,5 +22,11 @@ EXPOSE 8080
 EXPOSE 8761
 
 EXPOSE 8081
+# Directory for local file uploads (when S3 is not configured)
+RUN mkdir -p /app/uploads
+
+COPY --from=build /app/target/*.jar app.jar
+
+EXPOSE 8086
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
