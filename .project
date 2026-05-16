@@ -6,6 +6,7 @@
 	<name>media-service</name>
 	<name>message-service</name>
 	<name>notification-service</name>
+	<name>presence-service</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -37,6 +38,7 @@
 			<id>1777878539106</id>
 			<id>1777878539122</id>
 			<id>1777878539130</id>
+			<id>1777878539144</id>
 			<name></name>
 			<type>30</type>
 			<matcher>

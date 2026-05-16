@@ -196,6 +196,9 @@
     <artifactId>notification-service</artifactId>
     <version>1.0.0</version>
     <description>ConnectHub Notification Service - No Lombok</description>
+    <artifactId>presence-service</artifactId>
+    <version>1.0.0</version>
+    <description>ConnectHub Presence and Status Service - No Lombok</description>
 
     <properties>
         <java.version>17</java.version>
@@ -222,6 +225,9 @@
     <dependencies>
 
         <!-- Spring Boot Web -->
+	
+    <dependencies>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
