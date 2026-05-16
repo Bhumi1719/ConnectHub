@@ -1,0 +1,11 @@
+Manifest-Version: 1.0
+Build-Jdk-Spec: 21
+Implementation-Title: api-gateway
+Implementation-Title: eureka-server
+Implementation-Title: media-service
+Implementation-Title: message-service
+Implementation-Title: notification-service
+Implementation-Title: presence-service
+Implementation-Version: 1.0.0
+Created-By: Maven Integration for Eclipse
+
