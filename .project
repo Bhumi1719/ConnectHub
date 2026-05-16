@@ -2,6 +2,7 @@
 <projectDescription>
 	<name>api-gateway</name>
 	<name>eureka-server</name>
+	<name>auth-service</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -29,6 +30,7 @@
 	<filteredResources>
 		<filter>
 			<id>1777878539080</id>
+			<id>1777878539071</id>
 			<name></name>
 			<type>30</type>
 			<matcher>
