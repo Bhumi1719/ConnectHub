@@ -1,11 +1,11 @@
 package com.connecthub.room.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotNull;
 
 public class CreateRoomRequest {
 
-    @NotBlank(message = "Room name is required")
+    /** Required for GROUP; optional for DM (service supplies a default). */
     private String name;
 
     private String description;
@@ -13,6 +13,7 @@ public class CreateRoomRequest {
     // GROUP or DM
     private String type = "GROUP";
 
+    @JsonAlias({"createdBy"})
     @NotNull(message = "createdById is required")
     private Integer createdById;
 
@@ -20,7 +21,8 @@ public class CreateRoomRequest {
     private Boolean isPrivate = false;
     private Integer maxMembers = 100;
 
-    // For DM — the other user's ID
+    /** For DM — the other user's ID (alias matches older API clients). */
+    @JsonAlias({"targetUserId"})
     private Integer dmTargetUserId;
 
     public String getName() { return name; }

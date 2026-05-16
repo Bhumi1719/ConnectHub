@@ -20,6 +20,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -54,6 +55,21 @@ public class RoomServiceImpl implements RoomService {
 
     @Override
     public Room createRoom(CreateRoomRequest request) {
+        String type = (request.getType() == null || request.getType().isBlank())
+                ? "GROUP"
+                : request.getType().trim().toUpperCase(Locale.ROOT);
+        request.setType(type);
+
+        if ("GROUP".equalsIgnoreCase(type)) {
+            if (request.getName() == null || request.getName().isBlank()) {
+                throw new IllegalArgumentException("Room name is required");
+            }
+        } else if ("DM".equalsIgnoreCase(type)) {
+            if (request.getName() == null || request.getName().isBlank()) {
+                request.setName("Direct Message");
+            }
+        }
+
         ensureUserExists(request.getCreatedById());
 
         // If DM — check if already exists
@@ -466,8 +482,8 @@ public class RoomServiceImpl implements RoomService {
             Map profile = restTemplate.getForObject(authServiceUrl + "/auth/profile/" + userId, Map.class);
             return profile != null && profile.get("userId") != null;
         } catch (Exception e) {
-            log.warning("Could not validate userId=" + userId + ": " + e.getMessage());
-            return false;
+            log.warning("Could not validate userId=" + userId + " (auth-service unreachable) — proceeding: " + e.getMessage());
+            return true;
         }
     }
 }
