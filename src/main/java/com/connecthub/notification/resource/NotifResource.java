@@ -141,6 +141,24 @@ public class NotifResource {
         return ResponseEntity.ok(Map.of("unreadCount", notifService.getUnreadCount(recipientId)));
     }
 
+    // ─── Legacy aliases (older clients used /recipient/...) ─────────────────────
+
+    @Operation(summary = "Get all notifications for a user (legacy path)")
+    @GetMapping("/recipient/{recipientId}")
+    public ResponseEntity<List<Notification>> getByRecipientLegacy(
+            @Parameter(description = "Recipient user ID", example = "1")
+            @PathVariable Integer recipientId) {
+        return ResponseEntity.ok(notifService.getByRecipient(recipientId));
+    }
+
+    @Operation(summary = "Get unread notification count — legacy path")
+    @GetMapping("/recipient/{recipientId}/unread-count")
+    public ResponseEntity<Map<String, Integer>> getUnreadCountLegacy(
+            @Parameter(description = "Recipient user ID", example = "1")
+            @PathVariable Integer recipientId) {
+        return ResponseEntity.ok(Map.of("unreadCount", notifService.getUnreadCount(recipientId)));
+    }
+
     // ─── PUT /notifications/{notificationId}/read ─────────────────────────────
 
     @Operation(summary = "Mark a single notification as read")
