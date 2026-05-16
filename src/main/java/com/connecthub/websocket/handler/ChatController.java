@@ -16,17 +16,20 @@ import java.util.logging.Logger;
 /**
  * Handles inbound STOMP messages from connected clients.
  *
- * With RabbitMQ integration:
- *   - chat.send    → calls message-service REST to persist, then message-service
- *                    publishes the event to RabbitMQ; MessageBroadcastListener
- *                    in THIS service picks it up and broadcasts via STOMP.
- *   - chat.typing  → still direct STOMP broadcast (transient, no persistence needed)
- *   - chat.read    → calls room+message REST, then broadcasts via STOMP
- *   - chat.reaction → still direct STOMP broadcast (transient)
- *   - chat.edit    → calls message-service REST; message-service publishes to RabbitMQ
- *   - chat.delete  → calls message-service REST; message-service publishes to RabbitMQ
- *   - presence.update → publishes to RabbitMQ presence exchange;
- *                        presence-service updates DB, ws-service broadcasts
+ * FIXED FLOW for chat.send:
+ *   1. Frontend pehle HTTP POST /messages se message save karta hai.
+ *   2. Save hone ke baad frontend WebSocket /app/chat.send pe saved message bhejta hai
+ *      (messageId set hota hai).
+ *   3. Yahan agar messageId present hai → sirf STOMP broadcast karo (no double save).
+ *   4. Agar messageId absent hai (direct WebSocket send without HTTP) → message-service
+ *      se save karo, phir broadcast karo.
+ *
+ * - chat.typing  → direct STOMP broadcast (transient)
+ * - chat.read    → REST calls + direct STOMP broadcast
+ * - chat.reaction → direct STOMP broadcast (transient)
+ * - chat.edit    → message-service REST → RabbitMQ → MessageBroadcastListener
+ * - chat.delete  → message-service REST → RabbitMQ → MessageBroadcastListener
+ * - presence.update → RabbitMQ presence exchange
  */
 @Controller
 public class ChatController {
@@ -35,7 +38,7 @@ public class ChatController {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final RestTemplate restTemplate;
-    private final PresenceEventPublisher presenceEventPublisher; // ✅ RabbitMQ publisher
+    private final PresenceEventPublisher presenceEventPublisher;
 
     @Value("${message.service.url}")
     private String messageServiceUrl;
@@ -55,15 +58,23 @@ public class ChatController {
     }
 
     // ─── /app/chat.send ───────────────────────────────────────────────────────
-    // Client sends message → persist via REST → message-service publishes to RabbitMQ
-    // → MessageBroadcastListener.handleMessageSent() broadcasts to /topic/room/{roomId}
+    /**
+     * ✅ FIXED:
+     * - messageId present  → message already saved by HTTP POST; sirf broadcast karo.
+     *   (Double save hona band)
+     * - messageId absent   → fallback: message-service se save karo phir broadcast.
+     */
     @MessageMapping("/chat.send")
     public void sendMessage(@Payload ChatMessage chatMessage) {
         log.info("Message received from userId=" + chatMessage.getSenderId()
                 + " roomId=" + chatMessage.getRoomId());
 
         try {
+            // ✅ FIX: messageId present hai matlab HTTP se already save ho chuka hai.
+            // Sirf STOMP broadcast karo — double persist NAHI karo.
             if (chatMessage.getMessageId() != null) {
+                log.info("Message already persisted (messageId=" + chatMessage.getMessageId()
+                        + "), broadcasting only.");
                 messagingTemplate.convertAndSend(
                         "/topic/rooms/" + chatMessage.getRoomId() + "/messages",
                         chatMessage
@@ -71,16 +82,16 @@ public class ChatController {
                 return;
             }
 
+            // Fallback: agar koi client seedha WebSocket se message bheje bina HTTP ke
+            log.info("No messageId — persisting via message-service (fallback path)");
             Map<String, Object> messageRequest = new HashMap<>();
             messageRequest.put("roomId", chatMessage.getRoomId());
             messageRequest.put("senderId", chatMessage.getSenderId());
             messageRequest.put("content", chatMessage.getContent());
-            messageRequest.put("type", chatMessage.getType());
+            messageRequest.put("type", chatMessage.getType() != null ? chatMessage.getType() : "TEXT");
             messageRequest.put("mediaUrl", chatMessage.getMediaUrl());
             messageRequest.put("replyToMessageId", chatMessage.getReplyToMessageId());
 
-            // Persist message — message-service will publish to RabbitMQ automatically
-            // No need to call messagingTemplate here — MessageBroadcastListener handles it
             Map savedMessage = restTemplate.postForObject(
                     messageServiceUrl + "/messages",
                     messageRequest,
@@ -92,9 +103,8 @@ public class ChatController {
                         "/topic/rooms/" + chatMessage.getRoomId() + "/messages",
                         savedMessage
                 );
+                log.info("Fallback: Message saved and broadcast via STOMP");
             }
-
-            log.info("Message sent to message-service, RabbitMQ event will broadcast it");
 
         } catch (Exception e) {
             log.severe("Failed to process message: " + e.getMessage());
@@ -102,7 +112,6 @@ public class ChatController {
     }
 
     // ─── /app/chat.typing ─────────────────────────────────────────────────────
-    // Transient event — no persistence, no RabbitMQ needed, direct STOMP is fine
     @MessageMapping("/chat.typing")
     public void typingIndicator(@Payload TypingIndicator typingIndicator) {
         log.info("Typing indicator from userId=" + typingIndicator.getSenderId()
@@ -115,16 +124,13 @@ public class ChatController {
                     "eventType", "TYPING_INDICATOR",
                     "senderId", typingIndicator.getSenderId(),
                     "roomId", typingIndicator.getRoomId(),
-                    "isTyping", typingIndicator.getIsTyping()
+                    "isTyping", typingIndicator.getIsTyping(),
+                    "username", typingIndicator.getUsername() != null ? typingIndicator.getUsername() : ""
                 )
         );
     }
 
-    // ─── /app/chat.read ───────────────────────────────────────────────────────
-    // Updates room + message status via REST, then broadcasts via STOMP directly.
-    // The status update will ALSO trigger a RabbitMQ event from message-service
-    // (ws.message.status queue), but for read receipts it's acceptable to also
-    // do a direct STOMP broadcast for lower latency.
+    // ─── /app/dm.send ─────────────────────────────────────────────────────────
     @MessageMapping("/dm.send")
     public void sendDirectMessage(@Payload ChatMessage chatMessage) {
         if (chatMessage.getRecipientId() == null) {
@@ -141,6 +147,7 @@ public class ChatController {
         );
     }
 
+    // ─── /app/dm.typing ───────────────────────────────────────────────────────
     @MessageMapping("/dm.typing")
     public void directTyping(@Payload Map<String, Object> typingEvent) {
         Object recipientId = typingEvent.get("to");
@@ -154,6 +161,7 @@ public class ChatController {
         );
     }
 
+    // ─── /app/chat.read ───────────────────────────────────────────────────────
     @MessageMapping("/chat.read")
     public void readReceipt(@Payload ReadReceipt readReceipt) {
         log.info("Read receipt from userId=" + readReceipt.getReaderId()
@@ -161,14 +169,12 @@ public class ChatController {
                 + " upToMessageId=" + readReceipt.getUpToMessageId());
 
         try {
-            // 1. Update lastReadAt in Room Service
             restTemplate.put(
                     roomServiceUrl + "/rooms/" + readReceipt.getRoomId()
                     + "/lastread/" + readReceipt.getReaderId(),
                     null
             );
 
-            // 2. Update message delivery status (triggers RabbitMQ publish in message-service)
             if (readReceipt.getUpToMessageId() != null) {
                 restTemplate.put(
                         messageServiceUrl + "/messages/"
@@ -177,7 +183,6 @@ public class ChatController {
                 );
             }
 
-            // 3. Direct STOMP broadcast for immediate feedback
             messagingTemplate.convertAndSend(
                     "/topic/rooms/" + readReceipt.getRoomId() + "/messages",
                     Map.of(
@@ -194,7 +199,6 @@ public class ChatController {
     }
 
     // ─── /app/chat.reaction ───────────────────────────────────────────────────
-    // Transient — direct STOMP broadcast, no RabbitMQ needed
     @MessageMapping("/chat.reaction")
     public void reaction(@Payload Reaction reaction) {
         log.info("Reaction from userId=" + reaction.getSenderId()
@@ -214,15 +218,12 @@ public class ChatController {
     }
 
     // ─── /app/chat.edit ───────────────────────────────────────────────────────
-    // Persists edit via REST → message-service publishes MESSAGE_EDITED to RabbitMQ
-    // → MessageBroadcastListener.handleMessageEdited() broadcasts to STOMP
     @MessageMapping("/chat.edit")
     public void editMessage(@Payload MessageEdit messageEdit) {
         log.info("Edit message from userId=" + messageEdit.getEditorId()
                 + " messageId=" + messageEdit.getMessageId());
 
         try {
-            // REST call to message-service — it will publish to RabbitMQ
             restTemplate.put(
                     messageServiceUrl + "/messages/" + messageEdit.getMessageId(),
                     Map.of("content", messageEdit.getNewContent())
@@ -235,15 +236,12 @@ public class ChatController {
     }
 
     // ─── /app/chat.delete ─────────────────────────────────────────────────────
-    // Persists delete via REST → message-service publishes MESSAGE_DELETED to RabbitMQ
-    // → MessageBroadcastListener.handleMessageDeleted() broadcasts to STOMP
     @MessageMapping("/chat.delete")
     public void deleteMessage(@Payload MessageDelete messageDelete) {
         log.info("Delete message from userId=" + messageDelete.getDeleterId()
                 + " messageId=" + messageDelete.getMessageId());
 
         try {
-            // REST call to message-service — it will publish to RabbitMQ
             restTemplate.delete(
                     messageServiceUrl + "/messages/" + messageDelete.getMessageId()
             );
@@ -255,15 +253,11 @@ public class ChatController {
     }
 
     // ─── /app/presence.update ─────────────────────────────────────────────────
-    // ✅ Now publishes to RabbitMQ presence exchange instead of calling REST directly.
-    // Presence-service consumes, updates DB, and also the ws.presence.update queue
-    // triggers MessageBroadcastListener.handlePresenceUpdate() → STOMP broadcast.
     @MessageMapping("/presence.update")
     public void presenceUpdate(@Payload PresenceUpdate presenceUpdate) {
         log.info("Presence update from userId=" + presenceUpdate.getUserId()
                 + " status=" + presenceUpdate.getStatus());
 
-        // ✅ Publish to RabbitMQ — presence-service and websocket-service both react
         presenceEventPublisher.publishPresenceUpdate(
                 presenceUpdate.getUserId(),
                 presenceUpdate.getStatus()

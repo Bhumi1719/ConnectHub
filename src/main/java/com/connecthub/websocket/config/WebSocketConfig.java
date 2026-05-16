@@ -37,6 +37,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public static final String REDIS_CHANNEL_PRESENCE = "ws:presence";
     public static final String REDIS_CHANNEL_CHAT_PREFIX = "ws:chat:";
 
+    @Value("${cors.allowed-origins:http://localhost:4200,http://127.0.0.1:4200}")
+    private String[] allowedOrigins;
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         // Broker prefix — clients subscribe to these
@@ -54,10 +57,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // WebSocket endpoint — clients connect here
+        // Native WebSocket endpoint — used by the Angular client (brokerURL: ws://...)
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
-                .withSockJS(); // SockJS fallback for browsers behind proxies
+                .setAllowedOrigins(allowedOrigins);
+
+        // SockJS fallback endpoint — kept for browser compatibility if needed
+        registry.addEndpoint("/ws-sockjs")
+                .setAllowedOrigins(allowedOrigins)
+                .withSockJS();
     }
 
     // ─── Redis Template ───────────────────────────────────────────────────────
