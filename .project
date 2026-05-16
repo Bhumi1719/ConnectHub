@@ -7,6 +7,7 @@
 	<name>message-service</name>
 	<name>notification-service</name>
 	<name>presence-service</name>
+	<name>room-service</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -39,6 +40,7 @@
 			<id>1777878539122</id>
 			<id>1777878539130</id>
 			<id>1777878539144</id>
+			<id>1777878539153</id>
 			<name></name>
 			<type>30</type>
 			<matcher>

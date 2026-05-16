@@ -199,6 +199,9 @@
     <artifactId>presence-service</artifactId>
     <version>1.0.0</version>
     <description>ConnectHub Presence and Status Service - No Lombok</description>
+    <artifactId>room-service</artifactId>
+    <version>1.0.0</version>
+    <description>ConnectHub Room and Channel Service - No Lombok</description>
 
     <properties>
         <java.version>17</java.version>
@@ -284,6 +287,7 @@
             <version>0.4.20</version>
         </dependency>
 
+        
 		<!-- Swagger -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
