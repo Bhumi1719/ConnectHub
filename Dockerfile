@@ -28,5 +28,6 @@ RUN mkdir -p /app/uploads
 COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8086
+EXPOSE 8083
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

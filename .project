@@ -4,6 +4,7 @@
 	<name>eureka-server</name>
 	<name>auth-service</name>
 	<name>media-service</name>
+	<name>message-service</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -33,6 +34,7 @@
 			<id>1777878539080</id>
 			<id>1777878539071</id>
 			<id>1777878539106</id>
+			<id>1777878539122</id>
 			<name></name>
 			<type>30</type>
 			<matcher>
